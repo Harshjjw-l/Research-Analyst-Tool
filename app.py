@@ -377,9 +377,8 @@ st.markdown("---")
 if st.button("🔍 Search & Analyze", type="primary", use_container_width=True):
     
     # Validation
-    if not api_key:
-        st.error("❌ Please enter your Groq API key in the sidebar")
-    elif not question:
+    
+    if not question:
         st.error("❌ Please enter a research question")
     else:
         # Process based on input method
