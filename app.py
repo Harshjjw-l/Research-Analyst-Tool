@@ -56,11 +56,11 @@ with st.sidebar:
     st.header("⚙️ Configuration")
     
     # API Key input
-    api_key = st.text_input(
-        "🔑 Groq API Key",
-        type="password",
-        help="Get your free API key from console.groq.com"
-    )
+    # api_key = st.text_input(
+    #     "🔑 Groq API Key",
+    #     type="password",
+    #     help="Get your free API key from console.groq.com"
+    # )
     
     st.markdown("---")
     
@@ -276,7 +276,7 @@ def tfidf_search(question, document_sentences, top_n=5):
         return results
 
 
-def generate_research_answer(question, retrieved_sentences, api_key):
+def generate_research_answer(question, retrieved_sentences):
     """Generate AI answer"""
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     
@@ -427,7 +427,7 @@ if st.button("🔍 Search & Analyze", type="primary", use_container_width=True):
                     st.subheader("🤖 AI-Generated Answer")
                     
                     try:
-                        answer = generate_research_answer(question, retrieved_sentences, api_key)
+                        answer = generate_research_answer(question, retrieved_sentences)
                         
                         # Display answer in a nice box
                         st.markdown(f"""
