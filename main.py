@@ -6,6 +6,197 @@ from nltk.corpus import stopwords
 nltk.download('stopwords', quiet=True)
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from urllib.parse import urlparse
+import requests
+from Bio import Entrez
+import time
+
+
+def search_pubmed(query, max_results=10):
+    """
+    Search PubMed for papers
+    
+    Parameters:
+    - query: Search terms (e.g., "heat wave India health")
+    - max_results: How many papers to find
+    
+    Returns:
+    - List of paper metadata (title, abstract, link)
+    """
+    print(f"🔎Searching PubMed for: '{query}")
+
+    try:
+        handle=Entrez.esearch(
+            db="pubmed",
+            term=query,
+            retmax=max_results,
+            sort="relevance"
+        )
+        record=Entrez.read(handle)
+        handle.close()
+
+        id_list =record["IdList"]
+        if not id_list:
+            print("❌ No papers found")
+            return[]
+        print(f"✅ Found {len(id_list)} papers")
+
+        papers=[]
+
+        for pmid in id_list:
+            time.sleep(0.5)
+
+            try:
+                handle=Entrez.efetch(
+                    db="pubmed",
+                    id=pmid,
+                    rettype="abstract",
+                    retmode="xml"
+                )
+
+                records= Entrez.read(handle)
+                handle.close()
+
+                article=records['PubmedArticle'][0]['MedlineCitation']['Article']
+
+                title= article.get('ArticleTitle','No title')
+
+                abstract_parts= article.get('Abstract', {}).get('AbstractText', [])
+                abstract=' '.join([str(part) for part in abstract_parts])
+
+                link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+
+                papers.append({
+                    'pmid': pmid,
+                    'title': title,
+                    'abstract': abstract,
+                    'link': link,
+                    'text': f"{title}\n\n{abstract}"  # Combined for processing
+                })
+
+                print(f"  ✓ {title[:60]}...")
+
+            except Exception as e:
+                print(f"  ✗ Error fetching paper {pmid}: {e}")
+
+        return papers
+    except Exception as e:
+        print(f"❌ PubMed search failed: {e}")
+        return []
+    
+
+def create_sentence_from_pubmed(papers):
+    """Convert PubMed papers to sentence format for TF-IDF"""
+    document_sentences=[]
+
+
+    for paper in papers:
+
+        text = paper['text']
+        sentences = text.replace('?','.').replace('!','.').split('.')
+
+        for sentence in sentences:
+            sentence_clean=sentence.strip()
+
+            if len(sentence_clean)>20:
+                document_sentences.append({
+                    'text':sentence_clean,
+                    'source':f"PubMed: {paper['title'][:50]}...",
+                    'page': f"PMID: {paper['pmid']}",
+                    'link':paper['link']
+                }) 
+
+    return document_sentences
+
+
+
+
+def download_pdf_from_url(url, save_folder="downloads_papers"):
+    """
+    Download a pdf with url
+    parameters:
+    -url:Direct link to pdf
+    -save_folder: Where to save pdf
+    
+    Returns:
+    -Path to download file or None if failed
+    """
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+    
+    try: 
+        print(f" Downloading from :{url}")
+        headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/pdf,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': url.rsplit('/', 1)[0] + '/',
+        }
+        response =requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        content_type=response.headers.get('content-type','')
+
+        if 'pdf' not in content_type.lower() and not url.endswith('.pdf'):
+            print(f" Warning :This might not be a PDF file")
+
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path)
+
+        if not filename or not filename.endswith('.pdf'):
+            # Try to get from Content-Disposition header
+            content_disp = response.headers.get('content-disposition', '')
+            if 'filename=' in content_disp:
+                filename = content_disp.split('filename=')[1].strip('"')
+            else:
+                filename = f"downloaded_paper_{hash(url) % 10000}.pdf"
+
+
+        filepath = os.path.join(save_folder,filename)
+
+        with open(filepath,'wb') as f:
+            f.write(response.content)
+
+        print(f"✅ Downloaded: {filename}")
+        return filepath
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if hasattr(e, 'response') else None
+        
+        if status_code == 403:
+            print(f"❌ 403 Forbidden: Website blocking automated access")
+            print(f"   💡 Solution: Download manually from browser")
+        elif status_code == 404:
+            print(f"❌ 404 Not Found: File doesn't exist at this URL")
+        else:
+            print(f"❌ HTTP Error {status_code}: {e}")
+        
+        return None
+        
+    except Exception as e:
+        print(f"❌ Download failed: {e}")
+        return None
+ 
+
+
+def download_multiple_pdfs(urls):
+    """download multiple PDFs from a list of URLs"""
+
+    downloaded_files=[]
+    print(f"Downloading {len(urls)} PDFs...\n")
+
+    for i, url in enumerate(urls,1):
+        print(f"[{i}/{len(urls)}]",end=" ")
+        filepath = download_pdf_from_url(url)
+
+        if filepath:
+            downloaded_files.append(filepath)
+        print()
+
+    print(f"\n✅ Successfully downloaded {len(downloaded_files)}/{len(urls)} files")
+
+    return downloaded_files
+
+
 
 
 def generate_research_answer(question, retrieved_sentences, api_key):
@@ -66,7 +257,7 @@ ANSWER:"""
 
 
 
-def tfidf_search(question, document_sentences, top_n=3):                    #beter scoring system which tell how much an word is important with all document
+def tfidf_search(question, document_sentences, top_n=10):                    #beter scoring system which tell how much an word is important with all document
     """
     Use TF-IDF to find most relevant sentences
     Parameters:
@@ -184,26 +375,83 @@ print("="*70)
 print("MEDICAL RESEARCH ASSISTANT V1.4 - WITH SOURCE TRACKING")
 print("="*70)
 
-#API_KEY = input("\n 🔑 Enter your Groq API key: ").strip()
-API_KEY = "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"
+API_KEY = input("\n 🔑 Enter your Groq API key: ").strip()
+
+
+
+print("\n📚 Choose input method:")
+print("1. Local folder (PDFs already on your computer)")
+print("2. Download from URLs (provide links to PDFs)")
+print("3. Search PubMed (automatic)")
+
+choice = input("Enter choice (1/2/3): ").strip()
 
 question=input("\n💭Ask your research question: ")
 
 
 keywords = extract_keywords_for_display(question)
 print(f"🔍 Extracted keywords: {', '.join(keywords)}")
-
-folder = input("\n 📂Enter folder path : ").strip('"').strip("'")
-
+# STEP 1: GET DOCUMENTS
 print("\n" + "=" * 70)
 print("STEP 1: RETRIEVING RELEVANT CONTENT")
 print("=" * 70)
 
-document_sentences=load_all_pdfs_with_tracking(folder)
+
+if choice=="3":
+
+    Entrez.email=input("📧 Enter your email (required by PubMed): ").strip()
+
+    max_papers = int(input("📊 How many papers to search? (default 10): ").strip() or "10")
+
+    papers=search_pubmed(question,max_results=max_papers)
+
+    if not papers:
+        print("❌ No papers found on PubMed")
+
+    document_sentences= create_sentence_from_pubmed(papers)
+
+    print(f"\n✅ Extracted {len(document_sentences)} sentences from {len(papers)} papers")
+
+elif choice =="2":
+    print("\n Enter PDF URLs (one per line, press enter twice when done):")
+    urls=[]
+    while True:
+        url =input().strip()
+        if not url:
+            break
+        urls.append(url)
+    if not urls:
+        print("❌ No URLs provided")
+        exit()
+
+    downloaded_files = download_multiple_pdfs(urls)
+
+    if not downloaded_files:
+        print("❌ No files downloaded successfully")
+        exit()
+    
+    folder = "downloads_papers"
+    document_sentences = load_all_pdfs_with_tracking(folder)
+
+else:
+
+      folder = input("\n 📂Enter folder path : ").strip('"').strip("'")
+      document_sentences = load_all_pdfs_with_tracking(folder)
+
 
 if not document_sentences:
     print("❌ Failed to load documents")
     exit()
+
+
+
+# print("\n" + "=" * 70)
+# print("STEP 1: RETRIEVING RELEVANT CONTENT")
+# print("=" * 70)
+
+#document_sentences=load_all_pdfs_with_tracking(folder)
+
+
 
 print("\n🔎 Searching with TF-IDF algorithm...\n")
 top_results= tfidf_search(question, document_sentences, top_n=5)
