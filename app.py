@@ -278,7 +278,7 @@ def tfidf_search(question, document_sentences, top_n=5):
 
 def generate_research_answer(question, retrieved_sentences, api_key):
     """Generate AI answer"""
-    client = Groq(api_key=api_key)
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     
     context_parts = []
     for i, sentence in enumerate(retrieved_sentences, 1):
