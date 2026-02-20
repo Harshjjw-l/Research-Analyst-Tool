@@ -13,3 +13,4 @@ AI-powered research tool using RAG (Retrieval-Augmented Generation).
 2. Upload your research papers (PDF format)
 3. Ask your question
 4. Receive evidence-based answers with source citations
+# Research-Analyst-Tool

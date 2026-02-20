@@ -493,4 +493,3 @@ for i, result in enumerate(top_results, 1):
     print(f"{i}. {result['source']} (Page {result['page']}) - Score: {result['score']:.4f}")
 
 print("\n" + "=" * 70)
-    
